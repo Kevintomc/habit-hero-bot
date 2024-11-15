@@ -1,3 +1,18 @@
+const express = require("express");
+const app = express();
+const PORT = process.env.PORT || 3000; // Use the port provided by the hosting service or default to 3000
+
+// Add a route to confirm the bot is running
+app.get("/", (req, res) => {
+  res.send("My Habit Hero Bot is running!");
+});
+
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+// Your Telegram bot code goes here
 // Import required modules
 const TelegramBot = require('node-telegram-bot-api');
 const mongoose = require('mongoose');
