@@ -116,4 +116,3 @@ Here are some commands to get started:
     `;
     bot.sendMessage(msg.chat.id, helpText);
 });
-
