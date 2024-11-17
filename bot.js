@@ -1,134 +1,129 @@
+// Load environment variables from the .env file
+require('dotenv').config();
+
+// Import required modules
 const express = require("express");
-const bodyParser = require("body-parser");
-const mongoose = require("mongoose");
 const TelegramBot = require("node-telegram-bot-api");
+const mongoose = require("mongoose");
+const cron = require("node-cron");
 
-// Configuration
-const TOKEN = "7498218582:AAGtTNpsEimCMfijtCjvSGDzNNIXekhffBQ"; // Replace with your actual bot token
-const MONGO_URI = "mongodb+srv://kevintomc008:dwuvxK3Aimv6ce4Z@cluster0.9uvel.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"; // Replace with your MongoDB URI
+// Load environment variables
+const botToken = process.env.BOT_TOKEN;
+const mongoUri = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;
-const WEBHOOK_URL = `https://habit-hero-bot.onrender.com`; // Replace with your public domain or Render URL
 
-// Express setup
+// Initialize Express app
 const app = express();
-app.use(bodyParser.json());
+app.get("/", (req, res) => {
+  res.send("My Habit Hero Bot is running!");
+});
 
-// MongoDB setup
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+// Connect to MongoDB
 mongoose
-  .connect(MONGO_URI, {
+  .connect(mongoUri, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
   .then(() => console.log("MongoDB connected successfully"))
-  .catch((err) => console.error("MongoDB connection error:", err));
+  .catch((err) => console.log("MongoDB connection error:", err));
 
-// Define Habit Schema
+// Define a schema for habits
 const habitSchema = new mongoose.Schema({
   userId: String,
   habitName: String,
+  frequency: String,
+  lastUpdated: { type: Date, default: Date.now },
 });
+
+// Create a model for habits
 const Habit = mongoose.model("Habit", habitSchema);
 
-// Telegram Bot setup
-const bot = new TelegramBot(TOKEN, { webHook: true });
-bot.setWebHook(WEBHOOK_URL);
+// Initialize the Telegram bot
+const bot = new TelegramBot(botToken, { polling: true });
 
-// Express endpoint for Telegram Webhook
-app.post(`/${TOKEN}`, (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
-});
-
-// Command Handlers
+// Command: /start
 bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
   bot.sendMessage(
-    chatId,
-    `Welcome to My Habit Hero Bot! 🎯\nYou can:\n- Add a habit: /add [habit name]\n- Remove a habit: /remove [habit name]\n- View your habits: /list\n- Search habits: /search [keyword]\n`
+    msg.chat.id,
+    `Welcome to My Habit Hero Bot!\n\nYou can use the following commands:\n/addhabit - Add a new habit\n/removehabit - Remove a habit\n/myhabits - View your habits`
   );
 });
 
-bot.onText(/\/add (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const habitName = match[1].trim();
+// Command: /addhabit
+bot.onText(/\/addhabit (.+)/, async (msg, match) => {
+  const userId = msg.chat.id;
+  const habitName = match[1];
 
   try {
-    await Habit.create({ userId: chatId.toString(), habitName });
-    bot.sendMessage(chatId, `✅ Habit "${habitName}" has been added.`);
-  } catch (error) {
-    console.error(error);
-    bot.sendMessage(chatId, "❌ Could not add the habit. Please try again.");
+    const habit = new Habit({ userId, habitName });
+    await habit.save();
+    bot.sendMessage(userId, `Habit "${habitName}" has been added successfully!`);
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(userId, "Error adding the habit. Please try again.");
   }
 });
 
-bot.onText(/\/remove (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const habitName = match[1].trim();
+// Command: /removehabit
+bot.onText(/\/removehabit (.+)/, async (msg, match) => {
+  const userId = msg.chat.id;
+  const habitName = match[1];
 
   try {
-    const result = await Habit.findOneAndDelete({
-      userId: chatId.toString(),
-      habitName,
-    });
-
+    const result = await Habit.findOneAndDelete({ userId, habitName });
     if (result) {
-      bot.sendMessage(chatId, `✅ Habit "${habitName}" has been removed.`);
+      bot.sendMessage(userId, `Habit "${habitName}" has been removed successfully!`);
     } else {
-      bot.sendMessage(chatId, `❌ Habit "${habitName}" not found.`);
+      bot.sendMessage(userId, `Habit "${habitName}" not found.`);
     }
-  } catch (error) {
-    console.error(error);
-    bot.sendMessage(chatId, "❌ Could not remove the habit. Please try again.");
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(userId, "Error removing the habit. Please try again.");
   }
 });
 
-bot.onText(/\/list/, async (msg) => {
-  const chatId = msg.chat.id;
+// Command: /myhabits
+bot.onText(/\/myhabits/, async (msg) => {
+  const userId = msg.chat.id;
 
   try {
-    const habits = await Habit.find({ userId: chatId.toString() });
+    const habits = await Habit.find({ userId });
     if (habits.length > 0) {
       const habitList = habits.map((habit, index) => `${index + 1}. ${habit.habitName}`).join("\n");
-      bot.sendMessage(chatId, `📝 Your Habits:\n${habitList}`);
+      bot.sendMessage(userId, `Your habits:\n${habitList}`);
     } else {
-      bot.sendMessage(chatId, "You have no habits saved. Add some with /add [habit name].");
+      bot.sendMessage(userId, "You have no habits yet. Use /addhabit to add one!");
     }
-  } catch (error) {
-    console.error(error);
-    bot.sendMessage(chatId, "❌ Could not retrieve your habits. Please try again.");
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(userId, "Error retrieving your habits. Please try again.");
   }
 });
 
-bot.onText(/\/search (.+)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const keyword = match[1].trim();
-
-  try {
-    const habits = await Habit.find({
-      userId: chatId.toString(),
-      habitName: { $regex: keyword, $options: "i" },
-    });
-
-    if (habits.length > 0) {
-      const habitList = habits.map((habit, index) => `${index + 1}. ${habit.habitName}`).join("\n");
-      bot.sendMessage(chatId, `🔍 Habits matching "${keyword}":\n${habitList}`);
-    } else {
-      bot.sendMessage(chatId, `No habits found matching "${keyword}".`);
-    }
-  } catch (error) {
-    console.error(error);
-    bot.sendMessage(chatId, "❌ Could not search habits. Please try again.");
-  }
-});
-
-// Default message handler
+// Auto-filter for inappropriate words (Example: Prevent certain words in habit names)
+const bannedWords = ["badword1", "badword2"];
 bot.on("message", (msg) => {
-  if (!msg.text.startsWith("/")) {
-    bot.sendMessage(msg.chat.id, "❓ I don't recognize that command. Type /start for help.");
+  const text = msg.text || "";
+  if (bannedWords.some((word) => text.toLowerCase().includes(word))) {
+    bot.sendMessage(msg.chat.id, "Your message contains inappropriate words and was blocked.");
   }
 });
 
-// Start the Express server
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// Scheduled task example (e.g., send daily reminders)
+cron.schedule("0 9 * * *", async () => {
+  try {
+    const users = await Habit.distinct("userId");
+    users.forEach((userId) => {
+      bot.sendMessage(userId, "Good morning! Don't forget to track your habits today!");
+    });
+  } catch (err) {
+    console.error("Error sending reminders:", err);
+  }
 });
+
+console.log("My Habit Hero Bot is running with all features!");
