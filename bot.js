@@ -70,6 +70,66 @@ bot.command('view', async (ctx) => {
   }
 });
 
+// Command to Delete a Habit
+bot.command('delete', async (ctx) => {
+  ctx.reply('Which habit would you like to delete? (Reply with the habit number)');
+  
+  bot.on('text', async (ctx) => {
+    const habitNumber = parseInt(ctx.message.text, 10);
+    if (isNaN(habitNumber)) {
+      ctx.reply('❌ Please send a valid habit number.');
+      return;
+    }
+    
+    try {
+      const habits = await Habit.find({ userId: ctx.from.id });
+      if (habitNumber < 1 || habitNumber > habits.length) {
+        ctx.reply('❌ Invalid habit number.');
+      } else {
+        await Habit.deleteOne({ _id: habits[habitNumber - 1]._id });
+        ctx.reply('✅ Habit deleted successfully!');
+      }
+    } catch (err) {
+      console.error('Error deleting habit:', err);
+      ctx.reply('❌ Failed to delete your habit. Please try again.');
+    }
+  });
+});
+
+// Command to Update a Habit
+bot.command('update', async (ctx) => {
+  ctx.reply('Which habit would you like to update? (Reply with the habit number)');
+  
+  bot.on('text', async (ctx) => {
+    const habitNumber = parseInt(ctx.message.text, 10);
+    if (isNaN(habitNumber)) {
+      ctx.reply('❌ Please send a valid habit number.');
+      return;
+    }
+
+    try {
+      const habits = await Habit.find({ userId: ctx.from.id });
+      if (habitNumber < 1 || habitNumber > habits.length) {
+        ctx.reply('❌ Invalid habit number.');
+      } else {
+        ctx.reply('What would you like to update the habit to? (Send new habit description)');
+        
+        bot.on('text', async (ctx) => {
+          const updatedHabit = ctx.message.text;
+          await Habit.updateOne(
+            { _id: habits[habitNumber - 1]._id },
+            { habit: updatedHabit }
+          );
+          ctx.reply('✅ Habit updated successfully!');
+        });
+      }
+    } catch (err) {
+      console.error('Error updating habit:', err);
+      ctx.reply('❌ Failed to update your habit. Please try again.');
+    }
+  });
+});
+
 // Launch Bot
 bot.launch()
   .then(() => console.log('✅ Telegram Bot launched successfully!'))
