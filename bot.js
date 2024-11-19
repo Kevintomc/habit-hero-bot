@@ -1,93 +1,52 @@
-// Import necessary modules
-require('dotenv').config(); // This ensures that environment variables are loaded from .env
-const { Telegraf } = require('telegraf'); // Telegram bot library
-const mongoose = require('mongoose'); // MongoDB library
-const Habit = require('./models/habit'); // Habit model (You'll need to create this model)
+require('dotenv').config();
+const { Telegraf } = require('telegraf');
+const mongoose = require('mongoose');
+const Habit = require('./models/habit'); // Assuming you have a Habit model
 
-// MongoDB URI from environment variables
-const mongoURI = process.env.MONGODB_URI;
-
-if (!mongoURI) {
-  console.error('MongoDB URI is missing in the .env file!');
-  process.exit(1);
-}
-
-// Telegram Bot Token from environment variables
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
-// Connect to MongoDB
-mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+// MongoDB connection
+mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB connected successfully!');
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err);
-    process.exit(1);
   });
 
-// Telegram Bot Commands
+// Bot setup
+const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 
-// Start command - welcoming message and bot instructions
-bot.start((ctx) => {
-  ctx.reply('Welcome to Habit Hero Bot! 🎯\nUse the /add command to track new habits.');
-});
-
-// Add command - Collects habit input from user
+// Command to add a new habit
 bot.command('add', async (ctx) => {
-  ctx.reply('Please enter the habit you want to track:');
-  bot.on('text', async (message) => {
-    const habitText = message.message.text;
-
-    if (!habitText) {
-      return ctx.reply('🤔 You need to enter a habit!');
-    }
-
-    // Save the habit to the database
-    try {
-      const newHabit = new Habit({
-        userId: ctx.from.id,
-        habit: habitText,
-      });
-
-      await newHabit.save();
-      ctx.reply('✅ Your habit has been added and stored!');
-    } catch (err) {
-      console.error('❌ Error saving habit:', err);
-      ctx.reply('❌ There was an error while saving your habit.');
-    }
-  });
-});
-
-// Optional: view stored habits for the user (if you'd like)
-bot.command('view', async (ctx) => {
-  try {
-    const habits = await Habit.find({ userId: ctx.from.id });
-
-    if (habits.length === 0) {
-      return ctx.reply('🤔 You have no habits tracked yet!');
-    }
-
-    let message = 'Here are your tracked habits:\n';
-    habits.forEach((habit, index) => {
-      message += `${index + 1}. ${habit.habit}\n`;
-    });
-
-    ctx.reply(message);
-  } catch (err) {
-    console.error('❌ Error retrieving habits:', err);
-    ctx.reply('❌ There was an error while fetching your habits.');
+  const userId = ctx.from.id;
+  const habit = ctx.message.text.split(' ').slice(1).join(' ');
+  
+  if (!habit) {
+    return ctx.reply('Please provide a habit to add.');
   }
+
+  const newHabit = new Habit({ userId, habit });
+  await newHabit.save();
+
+  return ctx.reply(`Habit "${habit}" added successfully!`);
 });
 
-// Error handling for unknown commands
-bot.on('text', (ctx) => {
-  ctx.reply('🤔 Sorry, I didn’t understand that. Use /start to see available commands.');
+// Command to list habits
+bot.command('list', async (ctx) => {
+  const userId = ctx.from.id;
+  const habits = await Habit.find({ userId });
+
+  if (habits.length === 0) {
+    return ctx.reply('You have no habits added yet.');
+  }
+
+  const habitList = habits.map(h => h.habit).join('\n');
+  return ctx.reply(`Your habits:\n${habitList}`);
 });
 
 // Start the bot
 bot.launch().then(() => {
-  console.log('🚀 Bot is running...');
-}).catch((err) => {
-  console.error('❌ Error starting bot:', err);
+  console.log('✅ Bot is running!');
 });
 
+// Ensure your app listens to the correct port
+const port = process.env.PORT || 3000;
