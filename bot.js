@@ -9,8 +9,8 @@ const app = express();
 const MONGO_URI = process.env.MONGO_URI;
 mongoose
   .connect(MONGO_URI, {
-    useNewUrlParser: true, // Not needed for mongoose >6 but included for safety
-    useUnifiedTopology: true, // Not needed for mongoose >6 but included for safety
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
   })
   .then(() => {
     console.log('✅ MongoDB connected successfully!');
@@ -19,6 +19,15 @@ mongoose
     console.error('❌ MongoDB connection error:', err);
   });
 
+// Define Habit Schema
+const habitSchema = new mongoose.Schema({
+  userId: String, // Telegram user ID
+  habit: String,  // Habit description
+  createdAt: { type: Date, default: Date.now },
+});
+
+const Habit = mongoose.model('Habit', habitSchema);
+
 // Telegram Bot Setup
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -26,16 +35,47 @@ if (!BOT_TOKEN) {
 }
 const bot = new Telegraf(BOT_TOKEN);
 
-// Telegram Bot Commands
-bot.start((ctx) => ctx.reply('Welcome! I am your Habit Hero Bot.'));
-bot.help((ctx) => ctx.reply('I can help you track your habits! Use commands like /add or /view.'));
-bot.command('add', (ctx) => ctx.reply('What habit would you like to add?'));
-bot.command('view', (ctx) => ctx.reply('Here are your tracked habits!'));
+// Command to Add a Habit
+bot.command('add', (ctx) => {
+  ctx.reply('What habit would you like to add? (Reply with your habit)');
+  
+  bot.on('text', async (ctx) => {
+    try {
+      const newHabit = new Habit({
+        userId: ctx.from.id,
+        habit: ctx.message.text,
+      });
+      await newHabit.save();
+      ctx.reply('✅ Habit added successfully!');
+    } catch (err) {
+      console.error('Error saving habit:', err);
+      ctx.reply('❌ Failed to save your habit. Please try again.');
+    }
+  });
+});
+
+// Command to View Habits
+bot.command('view', async (ctx) => {
+  try {
+    const habits = await Habit.find({ userId: ctx.from.id });
+    if (habits.length === 0) {
+      ctx.reply('You have no habits saved yet. Use /add to add some!');
+    } else {
+      const habitList = habits.map((h, index) => `${index + 1}. ${h.habit}`).join('\n');
+      ctx.reply(`Here are your habits:\n${habitList}`);
+    }
+  } catch (err) {
+    console.error('Error retrieving habits:', err);
+    ctx.reply('❌ Failed to retrieve your habits. Please try again.');
+  }
+});
+
+// Launch Bot
 bot.launch()
   .then(() => console.log('✅ Telegram Bot launched successfully!'))
   .catch((err) => console.error('❌ Telegram Bot launch error:', err));
 
-// Graceful Shutdown for Bot
+// Graceful Shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
 
