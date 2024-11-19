@@ -1,73 +1,93 @@
-require('dotenv').config();
-const { Telegraf } = require('telegraf');
-const mongoose = require('mongoose');
+// Import necessary modules
+require('dotenv').config(); // This ensures that environment variables are loaded from .env
+const { Telegraf } = require('telegraf'); // Telegram bot library
+const mongoose = require('mongoose'); // MongoDB library
+const Habit = require('./models/habit'); // Habit model (You'll need to create this model)
 
-// Create a new Telegraf bot
+// MongoDB URI from environment variables
+const mongoURI = process.env.MONGODB_URI;
+
+if (!mongoURI) {
+  console.error('MongoDB URI is missing in the .env file!');
+  process.exit(1);
+}
+
+// Telegram Bot Token from environment variables
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// MongoDB User Schema
-const userSchema = new mongoose.Schema({
-    userId: { type: Number, required: true, unique: true },
-    username: { type: String },
-    habits: [String]
-});
+// Connect to MongoDB
+mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => {
+    console.log('✅ MongoDB connected successfully!');
+  })
+  .catch((err) => {
+    console.error('❌ MongoDB connection error:', err);
+    process.exit(1);
+  });
 
-const User = mongoose.model('User', userSchema);
+// Telegram Bot Commands
 
-// MongoDB connection
-mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => {
-        console.log('✅ MongoDB connected successfully!');
-    })
-    .catch(err => {
-        console.log('❌ MongoDB connection error:', err);
-    });
-
-// Start command - Welcome message
+// Start command - welcoming message and bot instructions
 bot.start((ctx) => {
-    ctx.reply("Welcome to Habit Hero Bot! 🎯\n\nUse the /add command to track new habits.");
+  ctx.reply('Welcome to Habit Hero Bot! 🎯\nUse the /add command to track new habits.');
 });
 
-// Add command - to start habit input process
-bot.command('add', (ctx) => {
-    ctx.reply("Please enter the habit you want to track:");
-    
-    // Listen for the text message from the user
-    bot.on('text', async (ctx) => {
-        const habit = ctx.message.text;
-        
-        // Ignore if the user just sends /add again (i.e., no habit input)
-        if (habit === "/add") return;
-        
-        // Check if the user exists in the database or create a new user
-        const user = await User.findOne({ userId: ctx.from.id });
-        
-        if (user) {
-            // Add the habit to the user's list and save it
-            user.habits.push(habit);
-            await user.save();
-            ctx.reply("Your habit has been added successfully! ✅");
-        } else {
-            // If the user doesn't exist, create a new user
-            const newUser = new User({
-                userId: ctx.from.id,
-                username: ctx.from.username || 'Anonymous',
-                habits: [habit]
-            });
-            await newUser.save();
-            ctx.reply("Your habit has been added successfully! ✅");
-        }
+// Add command - Collects habit input from user
+bot.command('add', async (ctx) => {
+  ctx.reply('Please enter the habit you want to track:');
+  bot.on('text', async (message) => {
+    const habitText = message.message.text;
+
+    if (!habitText) {
+      return ctx.reply('🤔 You need to enter a habit!');
+    }
+
+    // Save the habit to the database
+    try {
+      const newHabit = new Habit({
+        userId: ctx.from.id,
+        habit: habitText,
+      });
+
+      await newHabit.save();
+      ctx.reply('✅ Your habit has been added and stored!');
+    } catch (err) {
+      console.error('❌ Error saving habit:', err);
+      ctx.reply('❌ There was an error while saving your habit.');
+    }
+  });
+});
+
+// Optional: view stored habits for the user (if you'd like)
+bot.command('view', async (ctx) => {
+  try {
+    const habits = await Habit.find({ userId: ctx.from.id });
+
+    if (habits.length === 0) {
+      return ctx.reply('🤔 You have no habits tracked yet!');
+    }
+
+    let message = 'Here are your tracked habits:\n';
+    habits.forEach((habit, index) => {
+      message += `${index + 1}. ${habit.habit}\n`;
     });
+
+    ctx.reply(message);
+  } catch (err) {
+    console.error('❌ Error retrieving habits:', err);
+    ctx.reply('❌ There was an error while fetching your habits.');
+  }
 });
 
-// Error handling for unrecognized commands or messages
+// Error handling for unknown commands
 bot.on('text', (ctx) => {
-    ctx.reply("🤔 Sorry, I didn’t understand that. Use /start to see available commands.");
+  ctx.reply('🤔 Sorry, I didn’t understand that. Use /start to see available commands.');
 });
 
 // Start the bot
 bot.launch().then(() => {
-    console.log('🚀 Bot is running!');
-}).catch(err => {
-    console.log('❌ Bot launch error:', err);
+  console.log('🚀 Bot is running...');
+}).catch((err) => {
+  console.error('❌ Error starting bot:', err);
 });
+
