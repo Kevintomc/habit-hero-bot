@@ -1,52 +1,66 @@
-require('dotenv').config();
+// Import required modules
+require('dotenv').config(); // Load environment variables
 const { Telegraf } = require('telegraf');
 const mongoose = require('mongoose');
-const Habit = require('./models/habit'); // Assuming you have a Habit model
+
+// Extract environment variables
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const MONGO_URI = process.env.MONGO_URI;
+
+// Validate environment variables
+if (!BOT_TOKEN) {
+  console.error("❌ Bot token is missing! Make sure BOT_TOKEN is defined in the .env file.");
+  process.exit(1);
+}
+if (!MONGO_URI) {
+  console.error("❌ MongoDB URI is missing! Make sure MONGO_URI is defined in the .env file.");
+  process.exit(1);
+}
+
+// Initialize the bot
+const bot = new Telegraf(BOT_TOKEN);
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('✅ MongoDB connected successfully!');
-  })
+mongoose
+  .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("✅ MongoDB connected successfully!"))
   .catch((err) => {
-    console.error('❌ MongoDB connection error:', err);
+    console.error("❌ MongoDB connection error:", err);
+    process.exit(1);
   });
 
-// Bot setup
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-// Command to add a new habit
-bot.command('add', async (ctx) => {
-  const userId = ctx.from.id;
-  const habit = ctx.message.text.split(' ').slice(1).join(' ');
-  
-  if (!habit) {
-    return ctx.reply('Please provide a habit to add.');
-  }
-
-  const newHabit = new Habit({ userId, habit });
-  await newHabit.save();
-
-  return ctx.reply(`Habit "${habit}" added successfully!`);
+// Bot commands
+bot.start((ctx) => ctx.reply("Welcome to Habit Hero Bot! 🎯\n\nUse the /add command to track new habits."));
+bot.command('add', (ctx) => {
+  ctx.reply("What habit would you like to track?");
+  // Logic for adding a habit can be implemented here
 });
 
-// Command to list habits
-bot.command('list', async (ctx) => {
-  const userId = ctx.from.id;
-  const habits = await Habit.find({ userId });
-
-  if (habits.length === 0) {
-    return ctx.reply('You have no habits added yet.');
-  }
-
-  const habitList = habits.map(h => h.habit).join('\n');
-  return ctx.reply(`Your habits:\n${habitList}`);
+// Default handler for unrecognized messages
+bot.on('text', (ctx) => {
+  ctx.reply("🤔 Sorry, I didn’t understand that. Use /start to see available commands.");
 });
 
-// Start the bot
-bot.launch().then(() => {
-  console.log('✅ Bot is running!');
-});
+// Launch the bot
+bot.launch()
+  .then(() => console.log("🚀 Bot is running!"))
+  .catch((err) => {
+    console.error("❌ Bot failed to start:", err);
+    process.exit(1);
+  });
 
-// Ensure your app listens to the correct port
-const port = process.env.PORT || 3000;
+// Handle graceful shutdown
+process.once('SIGINT', () => {
+  bot.stop("SIGINT");
+  mongoose.connection.close(() => {
+    console.log("⚡ MongoDB connection closed.");
+    process.exit(0);
+  });
+});
+process.once('SIGTERM', () => {
+  bot.stop("SIGTERM");
+  mongoose.connection.close(() => {
+    console.log("⚡ MongoDB connection closed.");
+    process.exit(0);
+  });
+});
