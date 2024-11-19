@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "telegraf": "^4.12.2" ,
     "chart.js": "^4.4.6",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
@@ -18,5 +19,6 @@
     "mongoose": "^8.8.1",
     "node-cron": "^3.0.3",
     "node-telegram-bot-api": "^0.63.0"
+    
   }
 }
