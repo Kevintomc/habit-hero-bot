@@ -1,0 +1,6 @@
+services:
+  - type: worker
+    name: habit-hero-bot
+    env: node
+    buildCommand: "npm install"
+    startCommand: "node bot.js"
