@@ -1,205 +1,86 @@
-require('dotenv').config(); // Load environment variables
 const { Telegraf } = require('telegraf');
 const mongoose = require('mongoose');
 
-// Replace with your own values in .env
-const BOT_TOKEN = process.env.BOT_TOKEN; // Your Telegram Bot Token
-const MONGO_URI = process.env.MONGO_URI; // Your MongoDB URI
+// Initialize the bot
+const bot = new Telegraf('YOUR_BOT_TOKEN'); // Replace with your actual bot token
 
-const bot = new Telegraf(BOT_TOKEN);
+// Connect to MongoDB
+mongoose
+    .connect('YOUR_MONGODB_URI', { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('✅ Connected to MongoDB'))
+    .catch((error) => console.error('❌ MongoDB connection error:', error));
 
-// MongoDB Habit Schema
+// Define the Mongoose schema and model
 const habitSchema = new mongoose.Schema({
-    userId: { type: String, required: true },
-    habit: { type: String, required: true },
+    name: String,
+    description: String,
+    createdAt: { type: Date, default: Date.now },
 });
 
 const Habit = mongoose.model('Habit', habitSchema);
 
-// User states to track actions
-const userStates = {};
-
-// Connect to MongoDB
-mongoose
-    .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('✅ Connected to MongoDB'))
-    .catch((err) => {
-        console.error('❌ MongoDB connection error:', err);
-        bot.telegram.sendMessage(
-            '❌ Failed to connect to the database. Please contact the developer at therealimposterin@gmail.com for support.'
-        );
-    });
-
-// Start Command
-bot.start((ctx) => {
-    ctx.reply(
-        "👋 Welcome to Habit Hero Bot! Track your daily habits with ease.\n\n" +
-        "Here are the commands you can use:\n" +
-        "/add - Add a new habit\n" +
-        "/view - View your habits\n" +
-        "/delete - Delete a habit\n" +
-        "/filter - Filter your habits\n" +
-        "/help - See this list again\n\n" +
-        "📧 For support, contact the developer at therealimposterin@gmail.com."
-    );
-});
-
-// Help Command
-bot.command('help', (ctx) => {
-    ctx.reply(
-        "Here's how I can help you:\n" +
-        "/add - Add a new habit\n" +
-        "/view - View your habits\n" +
-        "/delete - Delete a habit\n" +
-        "/filter - Filter your habits by keyword\n" +
-        "/help - Get this help message again\n\n" +
-        "📧 For support, contact the developer at therealimposterin@gmail.com."
-    );
-});
-
-// Add Habit Command
-bot.command('add', (ctx) => {
-    const userId = ctx.from.id;
-
-    userStates[userId] = 'adding_habit';
-    ctx.reply("✏️ Please type the habit you want to add (e.g., 'Drink water daily').");
-});
-
-// Text Handler to Add or Delete Habit
-bot.on('text', async (ctx) => {
-    const userId = ctx.from.id;
-    const userState = userStates[userId];
-
-    // Adding Habit
-    if (userState === 'adding_habit') {
-        const habitText = ctx.message.text.trim();
-
-        if (!habitText) {
-            ctx.reply("❌ Please enter a valid habit.");
-        } else {
-            try {
-                await Habit.create({ userId, habit: habitText });
-                ctx.reply(`✅ Your habit "${habitText}" has been added successfully!`);
-                userStates[userId] = null; // Reset state
-            } catch (error) {
-                console.error("Error storing habit:", error);
-                ctx.reply(
-                    "❌ There was an error saving your habit. Please try again later.\nIf the issue persists, contact the developer at therealimposterin@gmail.com."
-                );
-            }
-        }
-    } 
-    // Deleting Habit
-    else if (userState === 'deleting_habit') {
-        const habitIndex = parseInt(ctx.message.text.trim(), 10) - 1;
-
-        if (isNaN(habitIndex)) {
-            ctx.reply("❌ Please enter a valid number corresponding to a habit.");
-        } else {
-            try {
-                const habits = await Habit.find({ userId });
-
-                if (habitIndex < 0 || habitIndex >= habits.length) {
-                    ctx.reply("❌ That number doesn't correspond to any habit. Please try again.");
-                } else {
-                    const habitToDelete = habits[habitIndex];
-                    await Habit.deleteOne({ _id: habitToDelete._id });
-                    ctx.reply(`✅ The habit "${habitToDelete.habit}" has been deleted.`);
-                    userStates[userId] = null; // Reset state
-                }
-            } catch (error) {
-                console.error("Error deleting habit:", error);
-                ctx.reply(
-                    "❌ There was an error deleting your habit. Please try again later.\nIf the issue persists, contact the developer at therealimposterin@gmail.com."
-                );
-            }
-        }
-    }
-});
-
-// View Habits Command
+// Command to view all records
 bot.command('view', async (ctx) => {
-    const userId = ctx.from.id;
-
     try {
-        const habits = await Habit.find({ userId });
-
-        if (habits.length === 0) {
-            ctx.reply("❌ You don't have any habits yet. Use /add to start tracking one!");
+        const data = await Habit.find();
+        if (data.length === 0) {
+            ctx.reply('No records found.');
         } else {
-            const habitList = habits.map((h, index) => `${index + 1}. ${h.habit}`).join('\n');
-            ctx.reply(`📝 Here are your habits:\n${habitList}`);
+            const formattedData = data.map((item) => `• ${item.name}: ${item.description}`).join('\n');
+            ctx.reply(`Here are your records:\n${formattedData}`);
         }
     } catch (error) {
-        console.error("Error fetching habits:", error);
-        ctx.reply(
-            "❌ There was an error retrieving your habits. Please try again later.\nIf the issue persists, contact the developer at therealimposterin@gmail.com."
-        );
+        console.error('Error fetching records:', error);
+        ctx.reply('Failed to fetch records. Please try again later.');
     }
 });
 
-// Delete Habits Command
+// Command to delete a specific record
 bot.command('delete', async (ctx) => {
-    const userId = ctx.from.id;
+    const args = ctx.message.text.split(' ').slice(1); // Extract arguments after the command
+    if (args.length === 0) {
+        return ctx.reply('Please specify the name of the habit to delete, e.g., /delete HabitName.');
+    }
 
+    const habitName = args.join(' ');
     try {
-        const habits = await Habit.find({ userId });
-
-        if (habits.length === 0) {
-            ctx.reply("❌ You don't have any habits to delete. Use /add to start tracking one!");
+        const result = await Habit.deleteOne({ name: habitName });
+        if (result.deletedCount > 0) {
+            ctx.reply(`Successfully deleted: ${habitName}`);
         } else {
-            const habitList = habits.map((h, index) => `${index + 1}. ${h.habit}`).join('\n');
-            ctx.reply(`🗑️ Here are your habits:\n${habitList}\n\nReply with the number of the habit you want to delete.`);
-
-            userStates[userId] = 'deleting_habit';
+            ctx.reply(`No matching record found for: ${habitName}`);
         }
     } catch (error) {
-        console.error("Error fetching habits:", error);
-        ctx.reply(
-            "❌ There was an error retrieving your habits. Please try again later.\nIf the issue persists, contact the developer at therealimposterin@gmail.com."
-        );
+        console.error('Error deleting record:', error);
+        ctx.reply('Failed to delete the record. Please try again later.');
     }
 });
 
-// Filter Habits Command (search by keyword)
+// Command to filter records
 bot.command('filter', async (ctx) => {
-    const userId = ctx.from.id;
+    const args = ctx.message.text.split(' ').slice(1); // Extract arguments after the command
+    if (args.length === 0) {
+        return ctx.reply('Please specify a keyword to filter, e.g., /filter keyword.');
+    }
 
-    ctx.reply("🔍 Type a keyword to filter your habits (e.g., 'drink').");
-
-    bot.on('text', async (ctx) => {
-        const keyword = ctx.message.text.trim();
-
-        if (!keyword) {
-            ctx.reply("❌ Please enter a valid keyword.");
+    const keyword = args.join(' ');
+    try {
+        const results = await Habit.find({ name: { $regex: keyword, $options: 'i' } });
+        if (results.length === 0) {
+            ctx.reply(`No records found matching: ${keyword}`);
         } else {
-            try {
-                const habits = await Habit.find({ userId, habit: { $regex: keyword, $options: 'i' } });
-
-                if (habits.length === 0) {
-                    ctx.reply("❌ No habits found with that keyword.");
-                } else {
-                    const habitList = habits.map((h, index) => `${index + 1}. ${h.habit}`).join('\n');
-                    ctx.reply(`📝 Filtered Habits:\n${habitList}`);
-                }
-            } catch (error) {
-                console.error("Error filtering habits:", error);
-                ctx.reply(
-                    "❌ There was an error filtering your habits. Please try again later.\nIf the issue persists, contact the developer at therealimposterin@gmail.com."
-                );
-            }
+            const formattedResults = results.map((item) => `• ${item.name}: ${item.description}`).join('\n');
+            ctx.reply(`Matching records:\n${formattedResults}`);
         }
-    });
+    } catch (error) {
+        console.error('Error filtering records:', error);
+        ctx.reply('Failed to filter records. Please try again later.');
+    }
 });
 
-// Error handling
-bot.catch((err) => {
-    console.error("Bot error:", err);
-});
-
-// Launch the bot
+// Start the bot
 bot.launch().then(() => {
-    console.log("🤖 Bot is up and running!");
-}).catch((err) => {
-    console.error("❌ Bot failed to start:", err);
+    console.log('🚀 Bot is up and running');
+}).catch((error) => {
+    console.error('❌ Bot failed to start:', error);
 });
